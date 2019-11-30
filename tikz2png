@@ -1,0 +1,171 @@
+#!/usr/bin/env python3
+import argparse
+import sys
+import os
+import traceback
+
+from pathlib import Path
+
+
+def main():
+    args = parse_args()
+    app = Application(args)
+    try:
+        app.run()
+    except ProgramError as p:
+        print(p)
+        return 2
+    except Exception as p:
+        if args.debug:
+            traceback.print_exc()
+        else:
+            print(p)
+        return 1
+
+
+class ProgramError(RuntimeError):
+    pass
+
+
+class Application:
+    def __init__(self, options):
+        self.options = options
+
+
+    def run(self):
+        self.tikz_code = self.options.input.read_text()
+        self.tmpdir = self.get_tmpdir() / ("tikz2png-%s" % os.getpid())
+        self.tmpdir.mkdir(parents=True, exist_ok=True)
+        try:
+            pdf = self.produce_pdf()
+            self.convert_pdf_to_png(pdf)
+        finally:
+            for p in self.tmpdir.iterdir():
+                p.unlink()
+            else:
+                self.tmpdir.rmdir()
+
+
+    def produce_pdf(self):
+        with current_directory(self.tmpdir):
+            tex = self.tmpdir / "tikz2png.tex"
+            pdf = tex.with_suffix('.pdf')
+            with tex.open('wt') as f:
+                f.write(LATEX % {'tikz_code': self.tikz_code})
+
+            cmd = f"pdflatex -halt-on-error {tex} > /dev/null"
+            self.execute(cmd)
+            return pdf
+
+
+    def convert_pdf_to_png(self, pdf):
+        opt = self.options
+        cmd = ["convert"]
+        cmd.append(f"-density {opt.quality}")
+        cmd.append(str(pdf))
+
+        if opt.background is not None:
+            background = opt.background
+        else:
+            background = 'none'
+            
+        cmd.append(f"-background {background}")
+        cmd.append("-flatten")
+        cmd.append("-trim")
+
+        if opt.border:
+            cmd.append(f"-bordercolor {background}")
+            cmd.append(f"-border {opt.border}")
+
+        cmd.append(str(opt.output))
+
+        self.execute(' '.join(cmd))
+
+
+    def execute(self, command):
+        if self.options.debug:
+            print(f"executing: {command}")
+        ret = os.system(command)
+        if ret != 0:
+            raise ProgramError(f"{command} failed with error code")
+
+
+    def get_tmpdir(self):
+        path = Path('/dev/shm')
+        if path.is_dir():
+            return path
+
+        for env in ('TMP', 'TEMP'):
+            env = os.environ.get(env)
+            if not env:
+                continue
+
+            path = Path(env)
+            if path.is_dir():
+                return path
+        else:
+            return Path('/tmp')
+
+
+class current_directory:
+    def __init__(self, directory):
+        self.current   = Path(os.curdir).absolute()
+        self.directory = Path(directory).absolute()
+
+    def __enter__(self):
+        os.chdir(self.directory)
+        return self
+
+    def __exit__(self, *unused_args):
+        os.chdir(self.current)
+
+
+def parse_args():
+    ap = argparse.ArgumentParser("Convert TikZ pictures to PNG")
+    ap.add_argument("-i", "--input", metavar="FILE",
+                    required=True,
+                    type=Path,
+                    help="input file with a TikZ picture")
+    ap.add_argument("-o", "--output", metavar="FILE",
+                    required=False,
+                    type=Path,
+                    help="output file; by default input with changed extension")
+    ap.add_argument("--quality", metavar="NUMBER",
+                    required=False,
+                    type=int,
+                    default=200,
+                    help="resolution of output image [default: %(default)s]")
+    ap.add_argument("--border", metavar="PIXELS",
+                    required=False,
+                    type=int,
+                    default=10,
+                    help="extra border around image (in pixels) [default: %(default)s]")
+    ap.add_argument("--background", metavar="COLOR",
+                    required=False,
+                    default=None,
+                    help="background color name [default: transparent]")
+    ap.add_argument("--debug",
+                    required=False,
+                    action='store_true')
+
+    args = ap.parse_args()
+    if not args.input.is_file():
+        ap.error(f"'{args.input}' does not exist")
+
+    if args.output is None:
+        args.output = args.input.with_suffix('.png')
+
+    return args
+
+LATEX=r"""
+\documentclass{article}
+\usepackage{tikz}
+\usetikzlibrary{chains,arrows,automata,decorations.markings,positioning,calc,decorations.pathreplacing,patterns}
+\begin{document}
+\thispagestyle{empty}
+%(tikz_code)s
+\end{document}
+"""
+
+if __name__ == '__main__':
+    sys.exit(main())
