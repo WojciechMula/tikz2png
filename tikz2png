@@ -161,6 +161,7 @@ LATEX=r"""
 \documentclass{article}
 \usepackage{tikz}
 \usetikzlibrary{chains,arrows,automata,decorations.markings,positioning,calc,decorations.pathreplacing,patterns}
+\usepackage[margin=0.1in]{geometry}
 \begin{document}
 \thispagestyle{empty}
 %(tikz_code)s
