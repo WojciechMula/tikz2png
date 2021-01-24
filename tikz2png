@@ -36,14 +36,21 @@ class Application:
         self.tikz_code = self.options.input.read_text()
         self.tmpdir = self.get_tmpdir() / ("tikz2png-%s" % os.getpid())
         self.tmpdir.mkdir(parents=True, exist_ok=True)
+        remove_files = True
         try:
-            pdf = self.produce_pdf()
-            self.convert_pdf_to_png(pdf)
+            try:
+                pdf = self.produce_pdf()
+                self.convert_pdf_to_png(pdf)
+            except:
+                if self.options.keep_tmp_files:
+                    print(f"Temporary files in {self.tmpdir} kept")
+                    remove_files = False
         finally:
-            for p in self.tmpdir.iterdir():
-                p.unlink()
-            else:
-                self.tmpdir.rmdir()
+            if remove_files:
+                for p in self.tmpdir.iterdir():
+                    p.unlink()
+                else:
+                    self.tmpdir.rmdir()
 
 
     def produce_pdf(self):
@@ -144,6 +151,10 @@ def parse_args():
                     required=False,
                     default=None,
                     help="background color name [default: transparent]")
+    ap.add_argument("--keep-tmp-files",
+                    required=False,
+                    action='store_true',
+                    help="don't remove temporary files in case of error")
     ap.add_argument("--debug",
                     required=False,
                     action='store_true')
