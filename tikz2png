@@ -4,6 +4,7 @@ import sys
 import os
 import traceback
 
+from contextlib import contextmanager
 from pathlib import Path
 
 
@@ -45,6 +46,7 @@ class Application:
                 if self.options.keep_tmp_files:
                     print(f"Temporary files in {self.tmpdir} kept")
                     remove_files = False
+                raise
         finally:
             if remove_files:
                 for p in self.tmpdir.iterdir():
@@ -60,7 +62,7 @@ class Application:
             with tex.open('wt') as f:
                 f.write(LATEX % {'tikz_code': self.tikz_code})
 
-            cmd = f"pdflatex -halt-on-error {tex} > /dev/null"
+            cmd = f"pdflatex -halt-on-error -interaction batchmode {tex} > /dev/null"
             self.execute(cmd)
             return pdf
 
@@ -94,7 +96,7 @@ class Application:
             print(f"executing: {command}")
         ret = os.system(command)
         if ret != 0:
-            raise ProgramError(f"{command} failed with error code")
+            raise ProgramError(f"{command} failed with error code {ret}")
 
 
     def get_tmpdir(self):
@@ -114,17 +116,15 @@ class Application:
             return Path('/tmp')
 
 
-class current_directory:
-    def __init__(self, directory):
-        self.current   = Path(os.curdir).absolute()
-        self.directory = Path(directory).absolute()
-
-    def __enter__(self):
-        os.chdir(self.directory)
-        return self
-
-    def __exit__(self, *unused_args):
-        os.chdir(self.current)
+@contextmanager
+def current_directory(directory):
+    current   = Path(os.curdir).absolute()
+    directory = Path(directory).absolute()
+    try:
+        os.chdir(directory)
+        yield
+    finally:
+        os.chdir(current)
 
 
 def parse_args():
